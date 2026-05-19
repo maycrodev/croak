@@ -21,4 +21,5 @@ class Submission(Base):
     attempt_number = Column(Integer, nullable=False, default=1)
     status = Column(String(20), nullable=False, default="received")
     failure_reason = Column(Text, nullable=True)
+    rejection_reason = Column(String(40), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -19,6 +21,7 @@ from libs.common.audit_client import record_event
 from libs.common.config import settings
 from libs.common.db import init_schema
 from libs.common.logging_config import configure_logging
+from libs.contracts.assignment import AssignmentPublic
 from libs.contracts.submission import SubmissionCreate, SubmissionDetail
 
 from db import SCHEMA, Base, engine, get_session
@@ -27,6 +30,7 @@ from models import Submission
 SERVICE_NAME = "submission-service"
 log = configure_logging(SERVICE_NAME, settings.log_level)
 
+ASSIGNMENT_URL = os.environ.get("ASSIGNMENT_URL", "http://assignment-service:8002")
 EXECUTION_URL = os.environ.get("EXECUTION_URL", "http://execution-service:8004")
 GRADING_URL = os.environ.get("GRADING_URL", "http://grading-service:8005")
 PLAGIARISM_URL = os.environ.get("PLAGIARISM_URL", "http://plagiarism-service:8006")
@@ -98,8 +102,19 @@ def _orchestrate(session: Session, submission: Submission) -> None:
     )
 
 
+def _fetch_assignment(assignment_id: int) -> AssignmentPublic:
+    with httpx.Client(timeout=10.0) as client:
+        resp = client.get(f"{ASSIGNMENT_URL}/assignments/{assignment_id}")
+    if resp.status_code == 404:
+        raise HTTPException(status_code=404, detail=f"Assignment {assignment_id} no existe")
+    resp.raise_for_status()
+    return AssignmentPublic.model_validate(resp.json())
+
+
 @app.post("/submissions", response_model=SubmissionDetail, status_code=201)
 def create_submission(payload: SubmissionCreate, session: Session = Depends(get_session)):
+    assignment = _fetch_assignment(payload.assignment_id)
+
     # Numero de intento N+1 para este (assignment, estudiante).
     previous = session.scalar(
         select(func.count(Submission.id)).where(
@@ -107,12 +122,43 @@ def create_submission(payload: SubmissionCreate, session: Session = Depends(get_
             Submission.student_id == payload.student_id,
         )
     )
+    attempt_number = (previous or 0) + 1
+
+    # --- Inciso V: enforcement de la fecha limite ---
+    deadline = assignment.deadline
+    if deadline.tzinfo is None:  # normaliza a UTC si llega naive
+        deadline = deadline.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) > deadline:
+        rejected = Submission(
+            assignment_id=payload.assignment_id, student_id=payload.student_id,
+            language=payload.language, source_code=payload.source_code,
+            attempt_number=attempt_number, status="rejected",
+            rejection_reason="after_deadline",
+        )
+        session.add(rejected)
+        session.commit()
+        session.refresh(rejected)
+        record_event(
+            service=SERVICE_NAME, action="rejected", entity_type="submission",
+            entity_id=str(rejected.id), actor_id=str(rejected.student_id),
+            payload={"reason": "after_deadline", "deadline": deadline.isoformat()},
+        )
+        log.info("submission id=%s RECHAZADA: fuera de plazo", rejected.id)
+        # No se dispara execution/grading/plagiarism.
+        return JSONResponse(
+            status_code=422,
+            content={"error": "submission_after_deadline",
+                     "deadline": deadline.isoformat(),
+                     "submission_id": rejected.id},
+        )
+
+    # --- Dentro de plazo: flujo normal (cadena de evaluacion) ---
     submission = Submission(
         assignment_id=payload.assignment_id,
         student_id=payload.student_id,
         language=payload.language,
         source_code=payload.source_code,
-        attempt_number=(previous or 0) + 1,
+        attempt_number=attempt_number,
         status="received",
     )
     session.add(submission)

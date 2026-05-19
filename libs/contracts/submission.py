@@ -26,6 +26,7 @@ class SubmissionPublic(BaseModel):
     attempt_number: int
     status: SubmissionStatus
     failure_reason: Optional[str] = None
+    rejection_reason: Optional[str] = None
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}

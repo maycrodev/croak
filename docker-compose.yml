@@ -130,6 +130,7 @@ services:
       SERVICE_NAME: submission-service
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-croak}:${POSTGRES_PASSWORD:-croak}@postgres:5432/${POSTGRES_DB:-croak}
       AUDIT_URL: http://audit-service:8008
+      ASSIGNMENT_URL: http://assignment-service:8002
       EXECUTION_URL: http://execution-service:8004
       GRADING_URL: http://grading-service:8005
       PLAGIARISM_URL: http://plagiarism-service:8006
@@ -182,6 +183,7 @@ services:
       SUBMISSION_URL: http://submission-service:8003
       ASSIGNMENT_URL: http://assignment-service:8002
       EXECUTION_URL: http://execution-service:8004
+      LMS_URL: http://lms-integration-service:8007
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
       - "8005:8005"
@@ -239,19 +241,29 @@ services:
     ports:
       - "8012:8012"
 
-  # -------------------------------------------- Servicio placeholder (MVP2: inciso IV)
+  # ------------------------------------------------------ MVP2 (inciso IV: ACL al LMS)
   lms-integration-service:
-    build: ./services/lms-integration-service
+    build:
+      context: .
+      dockerfile: services/lms-integration-service/Dockerfile
     container_name: croak-lms-integration
     environment:
       SERVICE_NAME: lms-integration-service
-      PORT: 8007
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-croak}:${POSTGRES_PASSWORD:-croak}@postgres:5432/${POSTGRES_DB:-croak}
+      AUDIT_URL: http://audit-service:8008
+      MAINFRAME_URL: http://lms-mainframe-mock:8012
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
       - "8007:8007"
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8007/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
 
 volumes:
   pgdata:
