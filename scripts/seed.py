@@ -27,6 +27,8 @@ USERS = [
      "full_name": "Pedro Profesor", "role": "professor"},
     {"email": "estudiante@croak.edu", "password": "estu123",
      "full_name": "Eva Estudiante", "role": "student"},
+    {"email": "estudiante2@croak.edu", "password": "estu123",
+     "full_name": "Bruno Estudiante", "role": "student"},
 ]
 
 

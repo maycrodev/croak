@@ -7,17 +7,35 @@ from pydantic import BaseModel
 ExecutionStatus = Literal["success", "runtime_error", "timeout", "error"]
 
 
-class ExecutionResult(BaseModel):
-    """Salida capturada de ejecutar el codigo del estudiante en el sandbox."""
+class CaseRun(BaseModel):
+    """Resultado de ejecutar el codigo del estudiante contra un caso de prueba.
 
-    id: Optional[int] = None
-    submission_id: int
+    El sandbox corre una vez por cada caso de prueba de la assignment (un caso
+    aporta su `stdin`); si la assignment no tiene casos, se hace una sola corrida.
+    """
+
+    case_index: int
+    stdin: str = ""
     stdout: str = ""
     stderr: str = ""
     exit_code: Optional[int] = None
     duration_ms: int = 0
     timed_out: bool = False
     status: ExecutionStatus = "success"
+
+
+class ExecutionResult(BaseModel):
+    """Resultado agregado de ejecutar una submission en el sandbox."""
+
+    id: Optional[int] = None
+    submission_id: int
+    status: ExecutionStatus = "success"
+    stdout: str = ""
+    stderr: str = ""
+    exit_code: Optional[int] = None
+    duration_ms: int = 0
+    timed_out: bool = False
+    runs: list[CaseRun] = []
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}

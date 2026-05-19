@@ -4,7 +4,9 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel
 
-SubmissionStatus = Literal["received", "executing", "executed", "graded", "rejected"]
+SubmissionStatus = Literal[
+    "received", "executing", "executed", "graded", "rejected", "failed"
+]
 
 
 class SubmissionCreate(BaseModel):
@@ -23,6 +25,14 @@ class SubmissionPublic(BaseModel):
     language: str
     attempt_number: int
     status: SubmissionStatus
+    failure_reason: Optional[str] = None
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
+
+
+class SubmissionDetail(SubmissionPublic):
+    """Igual que SubmissionPublic pero incluye el codigo fuente (uso interno:
+    execution / grading / plagiarism)."""
+
+    source_code: str

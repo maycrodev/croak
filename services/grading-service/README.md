@@ -1,3 +1,5 @@
 # grading-service
 
-Servicio CROAK (placeholder de Stream A). Implementacion pendiente: ver CLAUDE.md secciones 2 y 4.
+Aplica los criterios del profesor y persiste la nota. Puerto 8005.
+
+Implementado en MVP1 (CLAUDE.md incisos I, II, III).

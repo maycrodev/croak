@@ -1,3 +1,5 @@
 # assignment-service
 
-Servicio CROAK (placeholder de Stream A). Implementacion pendiente: ver CLAUDE.md secciones 2 y 4.
+Tareas: deadline y criterios de calificacion. Puerto 8002.
+
+Implementado en MVP1 (CLAUDE.md incisos I, II, III).

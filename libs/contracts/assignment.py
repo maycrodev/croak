@@ -5,17 +5,25 @@ from typing import Literal, Optional
 from pydantic import BaseModel
 
 
+class TestCase(BaseModel):
+    """Un caso de prueba: se alimenta `stdin` al programa y se compara su salida
+    contra `expected_stdout`. Otorga `points` si coincide."""
+
+    stdin: str = ""
+    expected_stdout: str
+    points: float = 1.0
+
+
 class GradingCriterion(BaseModel):
     """Criterio de calificacion definido por el profesor (inciso VII).
 
-    `kind` distingue una prueba (test_case) de una metrica. `config` lleva los
-    detalles especificos (entrada/salida esperada, umbral de la metrica, etc.).
+    MVP1 implementa solo `kind="test_cases"`. El tipo `metrics` (regex/contains)
+    llega en MVP3 (inciso VII completo).
     """
 
-    kind: Literal["test_case", "metric"]
-    name: str
-    weight: float = 1.0
-    config: dict = {}
+    kind: Literal["test_cases", "metrics"] = "test_cases"
+    name: str = "Pruebas automaticas"
+    test_cases: list[TestCase] = []
 
 
 class AssignmentBase(BaseModel):
@@ -23,7 +31,7 @@ class AssignmentBase(BaseModel):
     description: str = ""
     language: str = "python"
     deadline: datetime
-    # 'best' = cuenta la mejor nota; 'last' = cuenta el ultimo intento (inciso VI).
+    # 'best' = cuenta la mejor nota; 'last' = cuenta el ultimo intento (inciso VI, MVP3).
     attempt_policy: Literal["best", "last"] = "best"
     criteria: list[GradingCriterion] = []
 

@@ -1,3 +1,5 @@
 # execution-service
 
-Servicio CROAK (placeholder de Stream A). Implementacion pendiente: ver CLAUDE.md secciones 2 y 4.
+Ejecucion de codigo del estudiante en sandbox (subproceso + rlimits). Puerto 8004.
+
+Implementado en MVP1 (CLAUDE.md incisos I, II, III).

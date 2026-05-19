@@ -34,7 +34,7 @@ def record_event(
         "payload": payload or {},
     }
     try:
-        httpx.post(f"{settings.audit_url}/events", json=event, timeout=3.0)
+        httpx.post(f"{settings.audit_url}/audit/events", json=event, timeout=3.0)
     except httpx.HTTPError as exc:
         log.warning(
             "No se pudo registrar evento de auditoria (%s/%s): %s", service, action, exc

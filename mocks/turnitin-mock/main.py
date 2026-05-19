@@ -1,16 +1,22 @@
-"""Servicio CROAK (placeholder de Stream A - Fundaciones).
+"""turnitin-mock — proveedor externo de plagio simulado (CLAUDE.md seccion 6).
 
-Implementacion real pendiente segun el plan de MVPs (ver CLAUDE.md seccion 2).
-Por ahora solo expone /health para que `docker compose up` levante el sistema
-completo desde el primer momento.
+Expone POST /check y devuelve un `similarity_score` DETERMINISTA derivado del
+hash del contenido, para que las demos sean reproducibles. El plagiarism-service
+lo consume a traves de un Adapter, de modo que cambiar a un TurnItIn real solo
+toque ese adaptador.
 """
-import os
+import hashlib
 
 from fastapi import FastAPI
+from pydantic import BaseModel
 
-SERVICE_NAME = os.environ.get("SERVICE_NAME", "unknown-service")
+SERVICE_NAME = "turnitin-mock"
 
 app = FastAPI(title=SERVICE_NAME)
+
+
+class CheckRequest(BaseModel):
+    source_code: str = ""
 
 
 @app.get("/health")
@@ -18,10 +24,15 @@ def health():
     return {"status": "ok", "service": SERVICE_NAME}
 
 
-@app.get("/")
-def root():
-    return {
-        "service": SERVICE_NAME,
-        "status": "placeholder",
-        "message": "Pendiente de implementacion (ver CLAUDE.md seccion 2).",
-    }
+@app.post("/check")
+def check(payload: CheckRequest):
+    """Devuelve un puntaje de similitud externo determinista (0.00 - 0.59)."""
+    digest = hashlib.sha256(payload.source_code.encode("utf-8")).hexdigest()
+    score = (int(digest[:8], 16) % 6000) / 10000.0
+    matches = []
+    if score > 0.30:
+        matches.append({
+            "url": f"https://repositorio.ejemplo.edu/doc/{digest[:10]}",
+            "similarity": round(score, 4),
+        })
+    return {"similarity_score": round(score, 4), "matches": matches}

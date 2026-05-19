@@ -2,9 +2,15 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY requirements.txt ./
+# 1) Dependencias del servicio (capa cacheable).
+COPY services/audit-service/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . ./
+# 2) Librerias compartidas (contract-first) + codigo del servicio.
+COPY libs/ ./libs/
+COPY services/audit-service/ ./
 
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+ENV PYTHONPATH=/app
+EXPOSE 8008
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8008"]

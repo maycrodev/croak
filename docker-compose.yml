@@ -1,9 +1,10 @@
 # CROAK - Plataforma de Evaluacion Automatica de Codigo
 # Un solo docker-compose para toda la plataforma de microservicios (CLAUDE.md 3 y 4).
 #
-# Stream A (Fundaciones): postgres + identity-service + gateway estan IMPLEMENTADOS.
-# El resto de servicios y los mocks arrancan como placeholders (solo /health) y se
-# iran completando en MVP1..MVP4 sin tocar este archivo (puertos/schemas fijos).
+# Stream A (Fundaciones): postgres + identity-service + gateway.
+# MVP1 (incisos I, II, III): audit / assignment / submission / execution / grading /
+#   plagiarism + turnitin-mock IMPLEMENTADOS.
+# Placeholders pendientes (solo /health): lms-integration-service, lms-mainframe-mock.
 name: croak
 
 services:
@@ -25,7 +26,7 @@ services:
       timeout: 5s
       retries: 12
 
-  # ---------------------------------------------------------- Stream A (implementado)
+  # ------------------------------------------------------------ Stream A (Fundaciones)
   identity-service:
     build:
       context: .
@@ -76,104 +77,148 @@ services:
       retries: 10
       start_period: 10s
 
-  # --------------------------------------------- Servicios placeholder (MVP1..MVP4)
-  assignment-service:
-    build: ./services/assignment-service
-    container_name: croak-assignment
-    environment:
-      SERVICE_NAME: assignment-service
-      PORT: 8002
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-croak}:${POSTGRES_PASSWORD:-croak}@postgres:5432/${POSTGRES_DB:-croak}
-      JWT_SECRET: ${JWT_SECRET:-croak-dev-secret-change-me}
-    ports:
-      - "8002:8002"
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  submission-service:
-    build: ./services/submission-service
-    container_name: croak-submission
-    environment:
-      SERVICE_NAME: submission-service
-      PORT: 8003
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-croak}:${POSTGRES_PASSWORD:-croak}@postgres:5432/${POSTGRES_DB:-croak}
-      JWT_SECRET: ${JWT_SECRET:-croak-dev-secret-change-me}
-    ports:
-      - "8003:8003"
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  execution-service:
-    build: ./services/execution-service
-    container_name: croak-execution
-    environment:
-      SERVICE_NAME: execution-service
-      PORT: 8004
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-croak}:${POSTGRES_PASSWORD:-croak}@postgres:5432/${POSTGRES_DB:-croak}
-      JWT_SECRET: ${JWT_SECRET:-croak-dev-secret-change-me}
-    ports:
-      - "8004:8004"
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  grading-service:
-    build: ./services/grading-service
-    container_name: croak-grading
-    environment:
-      SERVICE_NAME: grading-service
-      PORT: 8005
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-croak}:${POSTGRES_PASSWORD:-croak}@postgres:5432/${POSTGRES_DB:-croak}
-      JWT_SECRET: ${JWT_SECRET:-croak-dev-secret-change-me}
-    ports:
-      - "8005:8005"
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  plagiarism-service:
-    build: ./services/plagiarism-service
-    container_name: croak-plagiarism
-    environment:
-      SERVICE_NAME: plagiarism-service
-      PORT: 8006
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-croak}:${POSTGRES_PASSWORD:-croak}@postgres:5432/${POSTGRES_DB:-croak}
-      JWT_SECRET: ${JWT_SECRET:-croak-dev-secret-change-me}
-    ports:
-      - "8006:8006"
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  lms-integration-service:
-    build: ./services/lms-integration-service
-    container_name: croak-lms-integration
-    environment:
-      SERVICE_NAME: lms-integration-service
-      PORT: 8007
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-croak}:${POSTGRES_PASSWORD:-croak}@postgres:5432/${POSTGRES_DB:-croak}
-      JWT_SECRET: ${JWT_SECRET:-croak-dev-secret-change-me}
-    ports:
-      - "8007:8007"
-    depends_on:
-      postgres:
-        condition: service_healthy
-
+  # ------------------------------------------------- MVP1 (incisos I, II, III)
   audit-service:
-    build: ./services/audit-service
+    build:
+      context: .
+      dockerfile: services/audit-service/Dockerfile
     container_name: croak-audit
     environment:
       SERVICE_NAME: audit-service
-      PORT: 8008
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-croak}:${POSTGRES_PASSWORD:-croak}@postgres:5432/${POSTGRES_DB:-croak}
-      JWT_SECRET: ${JWT_SECRET:-croak-dev-secret-change-me}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
       - "8008:8008"
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8008/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  assignment-service:
+    build:
+      context: .
+      dockerfile: services/assignment-service/Dockerfile
+    container_name: croak-assignment
+    environment:
+      SERVICE_NAME: assignment-service
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-croak}:${POSTGRES_PASSWORD:-croak}@postgres:5432/${POSTGRES_DB:-croak}
+      AUDIT_URL: http://audit-service:8008
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8002:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  submission-service:
+    build:
+      context: .
+      dockerfile: services/submission-service/Dockerfile
+    container_name: croak-submission
+    environment:
+      SERVICE_NAME: submission-service
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-croak}:${POSTGRES_PASSWORD:-croak}@postgres:5432/${POSTGRES_DB:-croak}
+      AUDIT_URL: http://audit-service:8008
+      EXECUTION_URL: http://execution-service:8004
+      GRADING_URL: http://grading-service:8005
+      PLAGIARISM_URL: http://plagiarism-service:8006
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8003:8003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  execution-service:
+    build:
+      context: .
+      dockerfile: services/execution-service/Dockerfile
+    container_name: croak-execution
+    environment:
+      SERVICE_NAME: execution-service
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-croak}:${POSTGRES_PASSWORD:-croak}@postgres:5432/${POSTGRES_DB:-croak}
+      AUDIT_URL: http://audit-service:8008
+      SUBMISSION_URL: http://submission-service:8003
+      ASSIGNMENT_URL: http://assignment-service:8002
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8004:8004"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8004/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  grading-service:
+    build:
+      context: .
+      dockerfile: services/grading-service/Dockerfile
+    container_name: croak-grading
+    environment:
+      SERVICE_NAME: grading-service
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-croak}:${POSTGRES_PASSWORD:-croak}@postgres:5432/${POSTGRES_DB:-croak}
+      AUDIT_URL: http://audit-service:8008
+      SUBMISSION_URL: http://submission-service:8003
+      ASSIGNMENT_URL: http://assignment-service:8002
+      EXECUTION_URL: http://execution-service:8004
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8005:8005"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8005/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  plagiarism-service:
+    build:
+      context: .
+      dockerfile: services/plagiarism-service/Dockerfile
+    container_name: croak-plagiarism
+    environment:
+      SERVICE_NAME: plagiarism-service
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-croak}:${POSTGRES_PASSWORD:-croak}@postgres:5432/${POSTGRES_DB:-croak}
+      AUDIT_URL: http://audit-service:8008
+      SUBMISSION_URL: http://submission-service:8003
+      TURNITIN_URL: http://turnitin-mock:8011
+      PLAGIARISM_THRESHOLD: "0.7"
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8006:8006"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8006/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
 
   # ----------------------------------------------------- Mocks de sistemas externos
   turnitin-mock:
@@ -193,6 +238,20 @@ services:
       PORT: 8012
     ports:
       - "8012:8012"
+
+  # -------------------------------------------- Servicio placeholder (MVP2: inciso IV)
+  lms-integration-service:
+    build: ./services/lms-integration-service
+    container_name: croak-lms-integration
+    environment:
+      SERVICE_NAME: lms-integration-service
+      PORT: 8007
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-croak}:${POSTGRES_PASSWORD:-croak}@postgres:5432/${POSTGRES_DB:-croak}
+    ports:
+      - "8007:8007"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   pgdata:

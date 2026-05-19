@@ -11,16 +11,21 @@ class PlagiarismMatch(BaseModel):
     source: Literal["internal", "turnitin"]
     other_submission_id: Optional[int] = None
     similarity: float
+    reference: Optional[str] = None
 
 
 class PlagiarismReport(BaseModel):
-    """Reporte combinado: similitud interna (k-gram + winnowing) + externa."""
+    """Reporte combinado: similitud interna (k-gram + winnowing) + externa.
+
+    `flagged` queda en True si cualquiera de los dos puntajes supera el umbral.
+    """
 
     id: Optional[int] = None
     submission_id: int
-    internal_similarity: float = 0.0
-    external_similarity: float = 0.0
-    suspected: bool = False
+    internal_score: float = 0.0
+    external_score: float = 0.0
+    flagged: bool = False
+    threshold: float = 0.7
     matches: list[PlagiarismMatch] = []
     created_at: Optional[datetime] = None
 

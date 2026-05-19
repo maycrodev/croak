@@ -1,84 +1,173 @@
-### CROAK - Demo de llamadas a la API
-### Stream A / Fundaciones: health checks, alta de usuarios y login.
-### Abrir con la extension "REST Client" de VS Code y pulsar "Send Request".
-### Requiere: docker compose up
+### CROAK - Demo end-to-end (MVP1: incisos I, II, III)
+### Abrir con la extension "REST Client" de VS Code y enviar las requests en orden.
+### Requiere: docker compose up  +  python scripts/seed.py  (crea los usuarios).
+### Flujo: login profesor -> crear tarea -> login estudiante -> enviar codigo ->
+###        ejecucion -> nota -> reporte de plagio -> bitacora de auditoria.
 
 @gateway = http://localhost:8000
-@identity = http://localhost:8001
 
 ###############################################################################
-# 1. Health checks
+# 0. Health checks
 ###############################################################################
 
-### Health del gateway
+### Gateway
 GET {{gateway}}/health
 
-### Health del identity-service (acceso directo, sin pasar por el gateway)
-GET {{identity}}/health
+### Cada microservicio (acceso directo)
+GET http://localhost:8001/health
+###
+GET http://localhost:8002/health
+###
+GET http://localhost:8003/health
+###
+GET http://localhost:8004/health
+###
+GET http://localhost:8005/health
+###
+GET http://localhost:8006/health
+###
+GET http://localhost:8008/health
+###
+GET http://localhost:8011/health
 
 ###############################################################################
-# 2. Alta de usuarios (ruta publica: no requiere token)
+# 1. El profesor inicia sesion y crea una tarea con casos de prueba
 ###############################################################################
 
-### Crear profesor
-POST {{gateway}}/users
-Content-Type: application/json
-
-{
-  "email": "prof@croak.edu",
-  "password": "prof123",
-  "full_name": "Pedro Profesor",
-  "role": "professor"
-}
-
-### Crear estudiante
-POST {{gateway}}/users
-Content-Type: application/json
-
-{
-  "email": "estudiante@croak.edu",
-  "password": "estu123",
-  "full_name": "Eva Estudiante",
-  "role": "student"
-}
-
-###############################################################################
-# 3. Login y uso del token
-###############################################################################
-
-### Login del profesor (guarda la respuesta como "login")
-# @name login
+# @name loginProf
 POST {{gateway}}/auth/login
 Content-Type: application/json
 
+{ "email": "prof@croak.edu", "password": "prof123" }
+
+###
+@profToken = {{loginProf.response.body.access_token}}
+@profId = {{loginProf.response.body.user.id}}
+
+### Crear assignment "Suma de dos enteros" (2 casos de prueba, 50 + 50 puntos)
+# @name createAssignment
+POST {{gateway}}/assignments
+Content-Type: application/json
+Authorization: Bearer {{profToken}}
+
 {
-  "email": "prof@croak.edu",
-  "password": "prof123"
+  "professor_id": {{profId}},
+  "title": "Suma de dos enteros",
+  "description": "Leer dos enteros de stdin y escribir su suma.",
+  "language": "python",
+  "deadline": "2026-12-31T23:59:00Z",
+  "attempt_policy": "best",
+  "criteria": [
+    {
+      "kind": "test_cases",
+      "name": "Casos basicos",
+      "test_cases": [
+        { "stdin": "2 3\n",   "expected_stdout": "5",  "points": 50 },
+        { "stdin": "10 20\n", "expected_stdout": "30", "points": 50 }
+      ]
+    }
+  ]
 }
 
-### Token extraido de la respuesta anterior
-@token = {{login.response.body.access_token}}
-
-### Perfil del usuario autenticado
-GET {{gateway}}/users/me
-Authorization: Bearer {{token}}
-
-### Listado de usuarios
-GET {{gateway}}/users
-Authorization: Bearer {{token}}
+###
+@assignmentId = {{createAssignment.response.body.id}}
 
 ###############################################################################
-# 4. Casos de error esperados
+# 2. La estudiante inicia sesion y envia codigo CORRECTO
 ###############################################################################
 
-### Acceso sin token -> debe responder 401
-GET {{gateway}}/users/me
-
-### Credenciales invalidas -> debe responder 401
+# @name loginStudent
 POST {{gateway}}/auth/login
 Content-Type: application/json
 
+{ "email": "estudiante@croak.edu", "password": "estu123" }
+
+###
+@studentToken = {{loginStudent.response.body.access_token}}
+@studentId = {{loginStudent.response.body.user.id}}
+
+### Enviar codigo correcto. La respuesta llega cuando la cadena
+### ejecucion -> calificacion -> plagio termino (sincrono).
+# @name submit
+POST {{gateway}}/submissions
+Content-Type: application/json
+Authorization: Bearer {{studentToken}}
+
 {
-  "email": "prof@croak.edu",
-  "password": "incorrecta"
+  "assignment_id": {{assignmentId}},
+  "student_id": {{studentId}},
+  "language": "python",
+  "source_code": "a, b = map(int, input().split())\nprint(a + b)\n"
 }
+
+###
+@submissionId = {{submit.response.body.id}}
+
+### Resultado de la ejecucion en sandbox (inciso I)
+GET {{gateway}}/executions/{{submissionId}}
+Authorization: Bearer {{studentToken}}
+
+### Nota calculada y persistida (inciso I) -> espera score 100 / 100
+GET {{gateway}}/grades/{{submissionId}}
+Authorization: Bearer {{studentToken}}
+
+### Reporte de plagio (inciso III) -> primera submission: internal_score 0
+GET {{gateway}}/plagiarism/{{submissionId}}
+Authorization: Bearer {{studentToken}}
+
+###############################################################################
+# 3. Un segundo estudiante COPIA el codigo -> plagio interno detectado
+###############################################################################
+
+# @name loginStudent2
+POST {{gateway}}/auth/login
+Content-Type: application/json
+
+{ "email": "estudiante2@croak.edu", "password": "estu123" }
+
+###
+@student2Token = {{loginStudent2.response.body.access_token}}
+@student2Id = {{loginStudent2.response.body.user.id}}
+
+### Codigo identico al de la primera estudiante
+# @name submitCopy
+POST {{gateway}}/submissions
+Content-Type: application/json
+Authorization: Bearer {{student2Token}}
+
+{
+  "assignment_id": {{assignmentId}},
+  "student_id": {{student2Id}},
+  "language": "python",
+  "source_code": "a, b = map(int, input().split())\nprint(a + b)\n"
+}
+
+###
+@copyId = {{submitCopy.response.body.id}}
+
+### Reporte de plagio del codigo copiado -> internal_score alto, flagged true
+GET {{gateway}}/plagiarism/{{copyId}}
+Authorization: Bearer {{student2Token}}
+
+###############################################################################
+# 4. Bitacora de auditoria (inciso II)
+###############################################################################
+
+### Eventos de la primera submission (filtrado por entidad)
+GET {{gateway}}/audit/events?entity_type=submission&entity_id={{submissionId}}
+Authorization: Bearer {{profToken}}
+
+### Bitacora completa: cada evento encadena su hash con el anterior (prev_hash)
+GET {{gateway}}/audit/events
+Authorization: Bearer {{profToken}}
+
+###############################################################################
+# 5. Casos de error esperados
+###############################################################################
+
+### Sin token -> 401
+GET {{gateway}}/grades/{{submissionId}}
+
+### Submission inexistente -> 404
+GET {{gateway}}/submissions/999999
+Authorization: Bearer {{profToken}}
