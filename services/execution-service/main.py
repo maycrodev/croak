@@ -1,8 +1,9 @@
 """execution-service — ejecuta el codigo del estudiante en el sandbox (inciso I).
 
-Schema: `execution`. Puerto: 8004. Corre el codigo una vez por cada caso de prueba
-de la assignment (cada caso aporta su `stdin`). Persiste un ExecutionResult con el
-detalle por corrida y emite un evento de auditoria.
+Schema: `execution`. Puerto: 8004. Corre el codigo:
+  - una vez por cada caso de prueba de la assignment (cada caso aporta su `stdin`);
+  - una corrida BASELINE adicional con `stdin` vacio, cuyo stdout usan los
+    criterios `metrics` del grading-service (ver ADR-006).
 """
 from __future__ import annotations
 
@@ -27,13 +28,15 @@ from libs.contracts.submission import SubmissionDetail
 
 from db import SCHEMA, Base, engine, get_session
 from models import ExecutionResultRow
-from sandbox import get_runner
+from sandbox import Runner, get_runner
 
 SERVICE_NAME = "execution-service"
 log = configure_logging(SERVICE_NAME, settings.log_level)
 
 SUBMISSION_URL = os.environ.get("SUBMISSION_URL", "http://submission-service:8003")
 ASSIGNMENT_URL = os.environ.get("ASSIGNMENT_URL", "http://assignment-service:8002")
+
+BASELINE_INDEX = -1  # case_index que identifica la corrida baseline (stdin vacio)
 
 
 class ExecuteRequest(BaseModel):
@@ -72,7 +75,7 @@ def _fetch_assignment(assignment_id: int) -> AssignmentPublic:
 
 
 def _collect_stdins(assignment: AssignmentPublic) -> list[str]:
-    """Aplana, en orden estable, el stdin de cada caso de prueba de la assignment.
+    """Aplana, en orden estable, el stdin de cada caso de prueba.
 
     El grading-service aplana los casos en el MISMO orden para alinear indices.
     """
@@ -84,6 +87,22 @@ def _collect_stdins(assignment: AssignmentPublic) -> list[str]:
     return stdins
 
 
+def _run_case(runner: Runner, source_code: str, stdin: str,
+              case_index: int, submission_id: int) -> CaseRun:
+    """Ejecuta una corrida en una carpeta temporal aislada que se elimina al final."""
+    workdir = tempfile.mkdtemp(prefix=f"croak_exec_{submission_id}_")
+    try:
+        outcome = runner.run(source_code, stdin, workdir)
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+    return CaseRun(
+        case_index=case_index, stdin=stdin,
+        stdout=outcome.stdout, stderr=outcome.stderr, exit_code=outcome.exit_code,
+        duration_ms=outcome.duration_ms, timed_out=outcome.timed_out,
+        status=outcome.status,
+    )
+
+
 @app.post("/executions", response_model=ExecutionResult, status_code=201)
 def execute(req: ExecuteRequest, session: Session = Depends(get_session)):
     submission = _fetch_submission(req.submission_id)
@@ -93,40 +112,35 @@ def execute(req: ExecuteRequest, session: Session = Depends(get_session)):
     except ValueError as exc:
         raise HTTPException(422, str(exc))
 
-    stdins = _collect_stdins(assignment) or [""]  # sin casos: una sola corrida
+    # Una corrida por caso de prueba (cada una con su stdin).
+    runs = [
+        _run_case(runner, submission.source_code, stdin, index, req.submission_id)
+        for index, stdin in enumerate(_collect_stdins(assignment))
+    ]
+    # Corrida baseline con stdin vacio: fuente de stdout para los criterios 'metrics'.
+    baseline = _run_case(runner, submission.source_code, "", BASELINE_INDEX, req.submission_id)
 
-    runs: list[CaseRun] = []
-    for index, stdin in enumerate(stdins):
-        workdir = tempfile.mkdtemp(prefix=f"croak_exec_{req.submission_id}_")
-        try:
-            outcome = runner.run(submission.source_code, stdin, workdir)
-        finally:
-            shutil.rmtree(workdir, ignore_errors=True)
-        runs.append(CaseRun(
-            case_index=index, stdin=stdin,
-            stdout=outcome.stdout, stderr=outcome.stderr,
-            exit_code=outcome.exit_code, duration_ms=outcome.duration_ms,
-            timed_out=outcome.timed_out, status=outcome.status,
-        ))
-
-    # Estado agregado: el "peor" resultado entre todas las corridas.
-    if any(r.status == "timeout" for r in runs):
+    # Estado agregado: refleja los test_cases; si no hay, refleja la baseline.
+    scored = runs if runs else [baseline]
+    if any(r.status == "timeout" for r in scored):
         agg_status = "timeout"
-    elif any(r.status == "runtime_error" for r in runs):
+    elif any(r.status == "runtime_error" for r in scored):
         agg_status = "runtime_error"
     else:
         agg_status = "success"
-    last = runs[-1]
 
+    all_runs = runs + [baseline]
+    representative = runs[-1] if runs else baseline
     row = ExecutionResultRow(
         submission_id=req.submission_id,
         status=agg_status,
-        stdout=last.stdout,
-        stderr=last.stderr,
-        exit_code=last.exit_code,
-        duration_ms=sum(r.duration_ms for r in runs),
-        timed_out=any(r.timed_out for r in runs),
+        stdout=representative.stdout,
+        stderr=representative.stderr,
+        exit_code=representative.exit_code,
+        duration_ms=sum(r.duration_ms for r in all_runs),
+        timed_out=any(r.timed_out for r in all_runs),
         runs=[r.model_dump() for r in runs],
+        baseline_run=baseline.model_dump(),
     )
     session.add(row)
     session.commit()
@@ -136,9 +150,9 @@ def execute(req: ExecuteRequest, session: Session = Depends(get_session)):
         service=SERVICE_NAME, action="completed", entity_type="execution",
         entity_id=str(row.id),
         payload={"submission_id": req.submission_id, "status": agg_status,
-                 "runs": len(runs)},
+                 "test_case_runs": len(runs)},
     )
-    log.info("ejecucion submission=%s result=%s status=%s corridas=%s",
+    log.info("ejecucion submission=%s result=%s status=%s test_cases=%s",
              req.submission_id, row.id, agg_status, len(runs))
     return row
 

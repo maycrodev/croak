@@ -14,16 +14,27 @@ class TestCase(BaseModel):
     points: float = 1.0
 
 
+class MetricRule(BaseModel):
+    """Regla de un criterio `metrics`: se evalua sobre el stdout de la corrida
+    baseline (stdin vacio). Otorga `points` si coincide."""
+
+    type: Literal["regex", "contains"]
+    pattern: str
+    points: float = 1.0
+
+
 class GradingCriterion(BaseModel):
     """Criterio de calificacion definido por el profesor (inciso VII).
 
-    MVP1 implementa solo `kind="test_cases"`. El tipo `metrics` (regex/contains)
-    llega en MVP3 (inciso VII completo).
+    Una assignment puede combinar criterios de ambos tipos:
+      - `test_cases`: usa la lista `test_cases` (stdin -> stdout esperado).
+      - `metrics`: usa la lista `rules` (regex/contains sobre el stdout baseline).
     """
 
     kind: Literal["test_cases", "metrics"] = "test_cases"
     name: str = "Pruebas automaticas"
     test_cases: list[TestCase] = []
+    rules: list[MetricRule] = []
 
 
 class AssignmentBase(BaseModel):

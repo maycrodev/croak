@@ -1,4 +1,4 @@
-### CROAK - Demo end-to-end (MVP1 + MVP2: incisos I-V)
+### CROAK - Demo end-to-end (MVP1-MVP3: incisos I-VII)
 ### Abrir con la extension "REST Client" de VS Code y enviar las requests en orden.
 ### Requiere: docker compose up  +  python scripts/seed.py  (crea los usuarios).
 
@@ -10,7 +10,7 @@
 
 ### Gateway
 GET {{gateway}}/health
-### identity / assignment / submission / execution / grading / plagiarism
+### Microservicios y mocks (acceso directo)
 GET http://localhost:8001/health
 ###
 GET http://localhost:8002/health
@@ -22,20 +22,19 @@ GET http://localhost:8004/health
 GET http://localhost:8005/health
 ###
 GET http://localhost:8006/health
-### audit / lms-integration / turnitin-mock / lms-mainframe-mock
-GET http://localhost:8008/health
 ###
 GET http://localhost:8007/health
+###
+GET http://localhost:8008/health
 ###
 GET http://localhost:8011/health
 ###
 GET http://localhost:8012/health
 
 ###############################################################################
-# ESCENARIO A - Entrega dentro de plazo: flujo completo + sync con el LMS
+# Login comun
 ###############################################################################
 
-### A.1 Login profesor
 # @name loginProf
 POST {{gateway}}/auth/login
 Content-Type: application/json
@@ -46,7 +45,21 @@ Content-Type: application/json
 @profToken = {{loginProf.response.body.access_token}}
 @profId = {{loginProf.response.body.user.id}}
 
-### A.2 Crear assignment con deadline FUTURO (2 casos, 50 + 50 puntos)
+# @name loginStudent
+POST {{gateway}}/auth/login
+Content-Type: application/json
+
+{ "email": "estudiante@croak.edu", "password": "estu123" }
+
+###
+@studentToken = {{loginStudent.response.body.access_token}}
+@studentId = {{loginStudent.response.body.user.id}}
+
+###############################################################################
+# ESCENARIO A - Entrega dentro de plazo: flujo completo + sync con el LMS
+###############################################################################
+
+### A.1 Crear assignment con deadline FUTURO (2 casos, 50 + 50 puntos)
 # @name createAssignment
 POST {{gateway}}/assignments
 Content-Type: application/json
@@ -74,18 +87,7 @@ Authorization: Bearer {{profToken}}
 ###
 @assignmentId = {{createAssignment.response.body.id}}
 
-### A.3 Login estudiante
-# @name loginStudent
-POST {{gateway}}/auth/login
-Content-Type: application/json
-
-{ "email": "estudiante@croak.edu", "password": "estu123" }
-
-###
-@studentToken = {{loginStudent.response.body.access_token}}
-@studentId = {{loginStudent.response.body.user.id}}
-
-### A.4 Enviar codigo correcto (la respuesta llega cuando la cadena termina)
+### A.2 Enviar codigo correcto
 # @name submit
 POST {{gateway}}/submissions
 Content-Type: application/json
@@ -101,52 +103,21 @@ Authorization: Bearer {{studentToken}}
 ###
 @submissionId = {{submit.response.body.id}}
 
-### A.5 Resultado de la ejecucion en sandbox (inciso I)
+### A.3 Ejecucion en sandbox (inciso I)
 GET {{gateway}}/executions/{{submissionId}}
 Authorization: Bearer {{studentToken}}
 
-### A.6 Nota calculada y persistida (inciso I) -> espera 100 / 100
+### A.4 Nota (inciso I) -> 100 / 100
 GET {{gateway}}/grades/{{submissionId}}
 Authorization: Bearer {{studentToken}}
 
-### A.7 Sincronizacion con el LMS mainframe (inciso IV) -> status synced, code 0000
+### A.5 Sincronizacion con el LMS mainframe (inciso IV) -> synced, code 0000
 GET {{gateway}}/lms/sync/{{submissionId}}
 Authorization: Bearer {{profToken}}
 
-### A.8 Reporte de plagio (inciso III) -> primera submission: internal_score 0
+### A.6 Reporte de plagio (inciso III)
 GET {{gateway}}/plagiarism/{{submissionId}}
 Authorization: Bearer {{studentToken}}
-
-### A.9 Un segundo estudiante COPIA el codigo -> plagio interno detectado
-# @name loginStudent2
-POST {{gateway}}/auth/login
-Content-Type: application/json
-
-{ "email": "estudiante2@croak.edu", "password": "estu123" }
-
-###
-@student2Token = {{loginStudent2.response.body.access_token}}
-@student2Id = {{loginStudent2.response.body.user.id}}
-
-### A.10 Envio copiado (codigo identico)
-# @name submitCopy
-POST {{gateway}}/submissions
-Content-Type: application/json
-Authorization: Bearer {{student2Token}}
-
-{
-  "assignment_id": {{assignmentId}},
-  "student_id": {{student2Id}},
-  "language": "python",
-  "source_code": "a, b = map(int, input().split())\nprint(a + b)\n"
-}
-
-###
-@copyId = {{submitCopy.response.body.id}}
-
-### A.11 Reporte de plagio del codigo copiado -> internal_score alto, flagged true
-GET {{gateway}}/plagiarism/{{copyId}}
-Authorization: Bearer {{student2Token}}
 
 ###############################################################################
 # ESCENARIO B - Entrega fuera de plazo: rechazo por deadline (inciso V)
@@ -161,25 +132,20 @@ Authorization: Bearer {{profToken}}
 {
   "professor_id": {{profId}},
   "title": "Tarea con plazo vencido",
-  "description": "Sirve para demostrar el rechazo por deadline.",
+  "description": "Demuestra el rechazo por deadline.",
   "language": "python",
   "deadline": "2020-01-01T00:00:00Z",
   "attempt_policy": "best",
   "criteria": [
-    {
-      "kind": "test_cases",
-      "name": "Casos basicos",
-      "test_cases": [
-        { "stdin": "1 1\n", "expected_stdout": "2", "points": 100 }
-      ]
-    }
+    { "kind": "test_cases", "name": "C",
+      "test_cases": [ { "stdin": "1 1\n", "expected_stdout": "2", "points": 100 } ] }
   ]
 }
 
 ###
 @lateAssignmentId = {{lateAssignment.response.body.id}}
 
-### B.2 Enviar codigo a la tarea vencida -> debe responder HTTP 422
+### B.2 Enviar a la tarea vencida -> HTTP 422
 # @name lateSubmit
 POST {{gateway}}/submissions
 Content-Type: application/json
@@ -195,28 +161,159 @@ Authorization: Bearer {{studentToken}}
 ###
 @rejectedId = {{lateSubmit.response.body.submission_id}}
 
-### B.3 La submission quedo persistida con status=rejected (queda auditable)
+### B.3 La submission quedo persistida con status=rejected
 GET {{gateway}}/submissions/{{rejectedId}}
 Authorization: Bearer {{profToken}}
 
-### B.4 Evento submission.rejected en la bitacora de auditoria
-GET {{gateway}}/audit/events?entity_type=submission&entity_id={{rejectedId}}
+###############################################################################
+# ESCENARIO C - Intentos ilimitados, politica 'best' (inciso VI)
+###############################################################################
+
+### C.1 Crear assignment (attempt_policy = best)
+# @name cAssignment
+POST {{gateway}}/assignments
+Content-Type: application/json
+Authorization: Bearer {{profToken}}
+
+{
+  "professor_id": {{profId}},
+  "title": "Suma - varios intentos",
+  "description": "El estudiante puede reintentar; cuenta la mejor nota.",
+  "language": "python",
+  "deadline": "2026-12-31T23:59:00Z",
+  "attempt_policy": "best",
+  "criteria": [
+    {
+      "kind": "test_cases",
+      "name": "Casos basicos",
+      "test_cases": [
+        { "stdin": "2 3\n",   "expected_stdout": "5",  "points": 50 },
+        { "stdin": "10 20\n", "expected_stdout": "30", "points": 50 }
+      ]
+    }
+  ]
+}
+
+###
+@cAssignmentId = {{cAssignment.response.body.id}}
+
+### C.2 Intento 1: codigo INCORRECTO -> nota baja
+# @name cAttempt1
+POST {{gateway}}/submissions
+Content-Type: application/json
+Authorization: Bearer {{studentToken}}
+
+{
+  "assignment_id": {{cAssignmentId}},
+  "student_id": {{studentId}},
+  "language": "python",
+  "source_code": "print(0)\n"
+}
+
+###
+@cSub1 = {{cAttempt1.response.body.id}}
+
+### C.3 Nota del intento 1 -> espera 0 / 100
+GET {{gateway}}/grades/{{cSub1}}
+Authorization: Bearer {{studentToken}}
+
+### C.4 Intento 2: codigo CORRECTO -> nota alta
+# @name cAttempt2
+POST {{gateway}}/submissions
+Content-Type: application/json
+Authorization: Bearer {{studentToken}}
+
+{
+  "assignment_id": {{cAssignmentId}},
+  "student_id": {{studentId}},
+  "language": "python",
+  "source_code": "a, b = map(int, input().split())\nprint(a + b)\n"
+}
+
+###
+@cSub2 = {{cAttempt2.response.body.id}}
+
+### C.5 Nota del intento 2 -> espera 100 / 100
+GET {{gateway}}/grades/{{cSub2}}
+Authorization: Bearer {{studentToken}}
+
+### C.6 Nota EFECTIVA (politica best) -> 100, source = intento 2
+GET {{gateway}}/grades/effective?assignment_id={{cAssignmentId}}&student_id={{studentId}}
 Authorization: Bearer {{profToken}}
 
 ###############################################################################
-# C. Bitacora de auditoria completa (cadena de hashes, incisos II y IV)
+# ESCENARIO D - Criterio mixto: test_cases + metrics (inciso VII)
 ###############################################################################
 
-### Eventos LMS
-GET {{gateway}}/audit/events?entity_type=lms_sync
+### D.1 Crear assignment con test_cases (60) + metrics (30 + 30) = 120 -> cap 100
+# @name dAssignment
+POST {{gateway}}/assignments
+Content-Type: application/json
 Authorization: Bearer {{profToken}}
 
-### Bitacora completa
+{
+  "professor_id": {{profId}},
+  "title": "Tarea con criterio mixto",
+  "description": "Combina casos de prueba y metricas sobre la salida.",
+  "language": "python",
+  "deadline": "2026-12-31T23:59:00Z",
+  "attempt_policy": "best",
+  "criteria": [
+    {
+      "kind": "test_cases",
+      "name": "Suma correcta",
+      "test_cases": [
+        { "stdin": "4 6\n", "expected_stdout": "RESULT\n10", "points": 60 }
+      ]
+    },
+    {
+      "kind": "metrics",
+      "name": "Formato de salida",
+      "rules": [
+        { "type": "contains", "pattern": "RESULT", "points": 30 },
+        { "type": "regex",    "pattern": "[0-9]+", "points": 30 }
+      ]
+    }
+  ]
+}
+
+###
+@dAssignmentId = {{dAssignment.response.body.id}}
+
+### D.2 Enviar codigo que pasa el test_case y cumple las metricas
+# @name dSubmit
+POST {{gateway}}/submissions
+Content-Type: application/json
+Authorization: Bearer {{studentToken}}
+
+{
+  "assignment_id": {{dAssignmentId}},
+  "student_id": {{studentId}},
+  "language": "python",
+  "source_code": "import sys\nnums = sys.stdin.read().split()\nprint(\"RESULT\")\nprint(sum(int(n) for n in nums))\n"
+}
+
+###
+@dSubmissionId = {{dSubmit.response.body.id}}
+
+### D.3 Nota con desglose -> breakdown: test_cases 60 + metrics 60, capped_at_100 true
+GET {{gateway}}/grades/{{dSubmissionId}}
+Authorization: Bearer {{studentToken}}
+
+###############################################################################
+# E. Bitacora de auditoria (incisos II, IV, VI)
+###############################################################################
+
+### Eventos LMS (incluye effective_score y unchanged)
+GET {{gateway}}/audit/events?service=grading-service
+Authorization: Bearer {{profToken}}
+
+### Bitacora completa (cadena de hashes)
 GET {{gateway}}/audit/events
 Authorization: Bearer {{profToken}}
 
 ###############################################################################
-# D. Casos de error esperados
+# F. Casos de error esperados
 ###############################################################################
 
 ### Sin token -> 401

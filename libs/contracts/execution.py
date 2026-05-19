@@ -36,6 +36,8 @@ class ExecutionResult(BaseModel):
     duration_ms: int = 0
     timed_out: bool = False
     runs: list[CaseRun] = []
+    # Corrida con stdin vacio; su stdout alimenta los criterios 'metrics' (ADR-006).
+    baseline_run: Optional[CaseRun] = None
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
