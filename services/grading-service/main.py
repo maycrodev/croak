@@ -32,6 +32,7 @@ log = configure_logging(SERVICE_NAME, settings.log_level)
 SUBMISSION_URL = os.environ.get("SUBMISSION_URL", "http://submission-service:8003")
 ASSIGNMENT_URL = os.environ.get("ASSIGNMENT_URL", "http://assignment-service:8002")
 EXECUTION_URL = os.environ.get("EXECUTION_URL", "http://execution-service:8004")
+LMS_URL = os.environ.get("LMS_URL", "http://lms-integration-service:8007")
 
 
 class GradeRequest(BaseModel):
@@ -128,7 +129,45 @@ def grade(req: GradeRequest, session: Session = Depends(get_session)):
                  "score": score, "max_score": max_score},
     )
     log.info("nota submission=%s score=%s/%s", req.submission_id, score, max_score)
+
+    _sync_to_lms(submission, row, score, max_score)
     return row
+
+
+def _sync_to_lms(submission, grade_row, score: float, max_score: float) -> None:
+    """Inciso IV: empuja la nota al LMS (best-effort, no bloquea la calificacion).
+
+    Un fallo del LMS (red, timeout, codigo != 0000) NO revierte la nota local:
+    coherente con el espiritu 'mainframe dificil' del kata.
+    """
+    lms_grade = round(score / max_score * 100, 2) if max_score > 0 else 0.0
+    try:
+        with httpx.Client(timeout=3.0) as client:
+            resp = client.post(f"{LMS_URL}/lms/sync", json={
+                "submission_id": grade_row.submission_id,
+                "student_id": submission.student_id,
+                "assignment_id": submission.assignment_id,
+                "grade": lms_grade,
+            })
+            resp.raise_for_status()
+        data = resp.json()
+        synced = data.get("status") == "synced"
+        record_event(
+            service=SERVICE_NAME,
+            action="lms.synced" if synced else "lms.sync.failed",
+            entity_type="grade", entity_id=str(grade_row.id),
+            payload={"submission_id": grade_row.submission_id, "lms_grade": lms_grade,
+                     "code": data.get("mainframe_response_code")},
+        )
+        log.info("LMS sync submission=%s synced=%s code=%s",
+                 grade_row.submission_id, synced, data.get("mainframe_response_code"))
+    except httpx.HTTPError as exc:
+        record_event(
+            service=SERVICE_NAME, action="lms.sync.failed", entity_type="grade",
+            entity_id=str(grade_row.id),
+            payload={"submission_id": grade_row.submission_id, "error": str(exc)},
+        )
+        log.warning("LMS sync fallo submission=%s: %s", grade_row.submission_id, exc)
 
 
 @app.get("/grades/{submission_id}", response_model=Grade)

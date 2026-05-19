@@ -1,8 +1,6 @@
-### CROAK - Demo end-to-end (MVP1: incisos I, II, III)
+### CROAK - Demo end-to-end (MVP1 + MVP2: incisos I-V)
 ### Abrir con la extension "REST Client" de VS Code y enviar las requests en orden.
 ### Requiere: docker compose up  +  python scripts/seed.py  (crea los usuarios).
-### Flujo: login profesor -> crear tarea -> login estudiante -> enviar codigo ->
-###        ejecucion -> nota -> reporte de plagio -> bitacora de auditoria.
 
 @gateway = http://localhost:8000
 
@@ -12,8 +10,7 @@
 
 ### Gateway
 GET {{gateway}}/health
-
-### Cada microservicio (acceso directo)
+### identity / assignment / submission / execution / grading / plagiarism
 GET http://localhost:8001/health
 ###
 GET http://localhost:8002/health
@@ -25,15 +22,20 @@ GET http://localhost:8004/health
 GET http://localhost:8005/health
 ###
 GET http://localhost:8006/health
-###
+### audit / lms-integration / turnitin-mock / lms-mainframe-mock
 GET http://localhost:8008/health
 ###
+GET http://localhost:8007/health
+###
 GET http://localhost:8011/health
+###
+GET http://localhost:8012/health
 
 ###############################################################################
-# 1. El profesor inicia sesion y crea una tarea con casos de prueba
+# ESCENARIO A - Entrega dentro de plazo: flujo completo + sync con el LMS
 ###############################################################################
 
+### A.1 Login profesor
 # @name loginProf
 POST {{gateway}}/auth/login
 Content-Type: application/json
@@ -44,7 +46,7 @@ Content-Type: application/json
 @profToken = {{loginProf.response.body.access_token}}
 @profId = {{loginProf.response.body.user.id}}
 
-### Crear assignment "Suma de dos enteros" (2 casos de prueba, 50 + 50 puntos)
+### A.2 Crear assignment con deadline FUTURO (2 casos, 50 + 50 puntos)
 # @name createAssignment
 POST {{gateway}}/assignments
 Content-Type: application/json
@@ -72,10 +74,7 @@ Authorization: Bearer {{profToken}}
 ###
 @assignmentId = {{createAssignment.response.body.id}}
 
-###############################################################################
-# 2. La estudiante inicia sesion y envia codigo CORRECTO
-###############################################################################
-
+### A.3 Login estudiante
 # @name loginStudent
 POST {{gateway}}/auth/login
 Content-Type: application/json
@@ -86,8 +85,7 @@ Content-Type: application/json
 @studentToken = {{loginStudent.response.body.access_token}}
 @studentId = {{loginStudent.response.body.user.id}}
 
-### Enviar codigo correcto. La respuesta llega cuando la cadena
-### ejecucion -> calificacion -> plagio termino (sincrono).
+### A.4 Enviar codigo correcto (la respuesta llega cuando la cadena termina)
 # @name submit
 POST {{gateway}}/submissions
 Content-Type: application/json
@@ -103,22 +101,23 @@ Authorization: Bearer {{studentToken}}
 ###
 @submissionId = {{submit.response.body.id}}
 
-### Resultado de la ejecucion en sandbox (inciso I)
+### A.5 Resultado de la ejecucion en sandbox (inciso I)
 GET {{gateway}}/executions/{{submissionId}}
 Authorization: Bearer {{studentToken}}
 
-### Nota calculada y persistida (inciso I) -> espera score 100 / 100
+### A.6 Nota calculada y persistida (inciso I) -> espera 100 / 100
 GET {{gateway}}/grades/{{submissionId}}
 Authorization: Bearer {{studentToken}}
 
-### Reporte de plagio (inciso III) -> primera submission: internal_score 0
+### A.7 Sincronizacion con el LMS mainframe (inciso IV) -> status synced, code 0000
+GET {{gateway}}/lms/sync/{{submissionId}}
+Authorization: Bearer {{profToken}}
+
+### A.8 Reporte de plagio (inciso III) -> primera submission: internal_score 0
 GET {{gateway}}/plagiarism/{{submissionId}}
 Authorization: Bearer {{studentToken}}
 
-###############################################################################
-# 3. Un segundo estudiante COPIA el codigo -> plagio interno detectado
-###############################################################################
-
+### A.9 Un segundo estudiante COPIA el codigo -> plagio interno detectado
 # @name loginStudent2
 POST {{gateway}}/auth/login
 Content-Type: application/json
@@ -129,7 +128,7 @@ Content-Type: application/json
 @student2Token = {{loginStudent2.response.body.access_token}}
 @student2Id = {{loginStudent2.response.body.user.id}}
 
-### Codigo identico al de la primera estudiante
+### A.10 Envio copiado (codigo identico)
 # @name submitCopy
 POST {{gateway}}/submissions
 Content-Type: application/json
@@ -145,24 +144,79 @@ Authorization: Bearer {{student2Token}}
 ###
 @copyId = {{submitCopy.response.body.id}}
 
-### Reporte de plagio del codigo copiado -> internal_score alto, flagged true
+### A.11 Reporte de plagio del codigo copiado -> internal_score alto, flagged true
 GET {{gateway}}/plagiarism/{{copyId}}
 Authorization: Bearer {{student2Token}}
 
 ###############################################################################
-# 4. Bitacora de auditoria (inciso II)
+# ESCENARIO B - Entrega fuera de plazo: rechazo por deadline (inciso V)
 ###############################################################################
 
-### Eventos de la primera submission (filtrado por entidad)
-GET {{gateway}}/audit/events?entity_type=submission&entity_id={{submissionId}}
+### B.1 Crear assignment con deadline en el PASADO
+# @name lateAssignment
+POST {{gateway}}/assignments
+Content-Type: application/json
 Authorization: Bearer {{profToken}}
 
-### Bitacora completa: cada evento encadena su hash con el anterior (prev_hash)
+{
+  "professor_id": {{profId}},
+  "title": "Tarea con plazo vencido",
+  "description": "Sirve para demostrar el rechazo por deadline.",
+  "language": "python",
+  "deadline": "2020-01-01T00:00:00Z",
+  "attempt_policy": "best",
+  "criteria": [
+    {
+      "kind": "test_cases",
+      "name": "Casos basicos",
+      "test_cases": [
+        { "stdin": "1 1\n", "expected_stdout": "2", "points": 100 }
+      ]
+    }
+  ]
+}
+
+###
+@lateAssignmentId = {{lateAssignment.response.body.id}}
+
+### B.2 Enviar codigo a la tarea vencida -> debe responder HTTP 422
+# @name lateSubmit
+POST {{gateway}}/submissions
+Content-Type: application/json
+Authorization: Bearer {{studentToken}}
+
+{
+  "assignment_id": {{lateAssignmentId}},
+  "student_id": {{studentId}},
+  "language": "python",
+  "source_code": "print(2)\n"
+}
+
+###
+@rejectedId = {{lateSubmit.response.body.submission_id}}
+
+### B.3 La submission quedo persistida con status=rejected (queda auditable)
+GET {{gateway}}/submissions/{{rejectedId}}
+Authorization: Bearer {{profToken}}
+
+### B.4 Evento submission.rejected en la bitacora de auditoria
+GET {{gateway}}/audit/events?entity_type=submission&entity_id={{rejectedId}}
+Authorization: Bearer {{profToken}}
+
+###############################################################################
+# C. Bitacora de auditoria completa (cadena de hashes, incisos II y IV)
+###############################################################################
+
+### Eventos LMS
+GET {{gateway}}/audit/events?entity_type=lms_sync
+Authorization: Bearer {{profToken}}
+
+### Bitacora completa
 GET {{gateway}}/audit/events
 Authorization: Bearer {{profToken}}
 
 ###############################################################################
-# 5. Casos de error esperados
+# D. Casos de error esperados
 ###############################################################################
 
 ### Sin token -> 401

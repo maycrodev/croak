@@ -12,6 +12,7 @@ from .assignment import (
 from .audit import AuditEvent, AuditEventIn
 from .execution import CaseRun, ExecutionResult
 from .grade import Grade
+from .lms import LmsSyncRecord, LmsSyncRequest
 from .plagiarism import PlagiarismMatch, PlagiarismReport
 from .submission import SubmissionCreate, SubmissionDetail, SubmissionPublic
 from .user import LoginRequest, Role, TokenResponse, UserCreate, UserPublic
@@ -26,6 +27,8 @@ __all__ = [
     "CaseRun",
     "ExecutionResult",
     "Grade",
+    "LmsSyncRecord",
+    "LmsSyncRequest",
     "PlagiarismMatch",
     "PlagiarismReport",
     "SubmissionCreate",
