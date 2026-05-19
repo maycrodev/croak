@@ -1,0 +1,84 @@
+### CROAK - Demo de llamadas a la API
+### Stream A / Fundaciones: health checks, alta de usuarios y login.
+### Abrir con la extension "REST Client" de VS Code y pulsar "Send Request".
+### Requiere: docker compose up
+
+@gateway = http://localhost:8000
+@identity = http://localhost:8001
+
+###############################################################################
+# 1. Health checks
+###############################################################################
+
+### Health del gateway
+GET {{gateway}}/health
+
+### Health del identity-service (acceso directo, sin pasar por el gateway)
+GET {{identity}}/health
+
+###############################################################################
+# 2. Alta de usuarios (ruta publica: no requiere token)
+###############################################################################
+
+### Crear profesor
+POST {{gateway}}/users
+Content-Type: application/json
+
+{
+  "email": "prof@croak.edu",
+  "password": "prof123",
+  "full_name": "Pedro Profesor",
+  "role": "professor"
+}
+
+### Crear estudiante
+POST {{gateway}}/users
+Content-Type: application/json
+
+{
+  "email": "estudiante@croak.edu",
+  "password": "estu123",
+  "full_name": "Eva Estudiante",
+  "role": "student"
+}
+
+###############################################################################
+# 3. Login y uso del token
+###############################################################################
+
+### Login del profesor (guarda la respuesta como "login")
+# @name login
+POST {{gateway}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "prof@croak.edu",
+  "password": "prof123"
+}
+
+### Token extraido de la respuesta anterior
+@token = {{login.response.body.access_token}}
+
+### Perfil del usuario autenticado
+GET {{gateway}}/users/me
+Authorization: Bearer {{token}}
+
+### Listado de usuarios
+GET {{gateway}}/users
+Authorization: Bearer {{token}}
+
+###############################################################################
+# 4. Casos de error esperados
+###############################################################################
+
+### Acceso sin token -> debe responder 401
+GET {{gateway}}/users/me
+
+### Credenciales invalidas -> debe responder 401
+POST {{gateway}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "prof@croak.edu",
+  "password": "incorrecta"
+}
