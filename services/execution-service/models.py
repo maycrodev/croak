@@ -22,4 +22,5 @@ class ExecutionResultRow(Base):
     duration_ms = Column(Integer, nullable=False, default=0)
     timed_out = Column(Boolean, nullable=False, default=False)
     runs = Column(JSON, nullable=False, default=list)
+    baseline_run = Column(JSON, nullable=True)  # corrida stdin vacio (criterios metrics)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

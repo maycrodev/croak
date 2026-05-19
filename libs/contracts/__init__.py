@@ -7,11 +7,12 @@ from .assignment import (
     AssignmentCreate,
     AssignmentPublic,
     GradingCriterion,
+    MetricRule,
     TestCase,
 )
 from .audit import AuditEvent, AuditEventIn
 from .execution import CaseRun, ExecutionResult
-from .grade import Grade
+from .grade import EffectiveGrade, Grade
 from .lms import LmsSyncRecord, LmsSyncRequest
 from .plagiarism import PlagiarismMatch, PlagiarismReport
 from .submission import SubmissionCreate, SubmissionDetail, SubmissionPublic
@@ -21,11 +22,13 @@ __all__ = [
     "AssignmentCreate",
     "AssignmentPublic",
     "GradingCriterion",
+    "MetricRule",
     "TestCase",
     "AuditEvent",
     "AuditEventIn",
     "CaseRun",
     "ExecutionResult",
+    "EffectiveGrade",
     "Grade",
     "LmsSyncRecord",
     "LmsSyncRequest",
