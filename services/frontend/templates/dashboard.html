@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CROAK — Panel de Auditoria</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header>
+    <h1>🐸 CROAK — Panel de Auditoria</h1>
+  </header>
+
+  {% if not auth_ok %}
+  <div class="banner banner-error">
+    No se pudo autenticar contra el backend. Los datos pueden no estar disponibles.
+  </div>
+  {% endif %}
+
+  <section class="integrity">
+    {% if verify is none %}
+      <div class="widget widget-bad">Integridad de la bitacora: no disponible</div>
+    {% elif verify.intact %}
+      <div class="widget widget-ok">
+        ✓ Cadena integra — {{ verify.total_events }} eventos · head: {{ verify.head_hash[:12] }}…
+      </div>
+    {% else %}
+      <div class="widget widget-bad">
+        ✗ Cadena ROTA — primer evento alterado: #{{ verify.first_break_id }}
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="table-wrap">
+    <h2>Submissions</h2>
+    {% if rows %}
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Estudiante</th>
+          <th>Assignment</th>
+          <th>Intento</th>
+          <th>Status</th>
+          <th>Nota final</th>
+          <th>Score plagio interno</th>
+          <th>Estado LMS</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td>{{ r.id }}</td>
+          <td>{{ r.student }}</td>
+          <td>{{ r.assignment }}</td>
+          <td>{{ r.attempt }}</td>
+          <td><span class="badge badge-{{ r.status_badge }}">{{ r.status }}</span></td>
+          <td>{{ r.score }}</td>
+          <td>{{ r.plagiarism }}</td>
+          <td>
+            {% if r.lms == '—' %}—
+            {% else %}<span class="badge badge-{{ r.lms_badge }}">{{ r.lms }}</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty">
+      No hay submissions todavia. Ejecuta <code>scripts/demo.http</code> y refresca (F5).
+    </p>
+    {% endif %}
+  </section>
+
+  <footer>Panel de solo lectura · refresca con F5 · servicio aislado en el puerto 5173</footer>
+</body>
+</html>
