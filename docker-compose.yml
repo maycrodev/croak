@@ -265,5 +265,26 @@ services:
       retries: 10
       start_period: 15s
 
+  # ------------------------------------------------ Frontend (PLUS, servicio aislado)
+  # Servicio nuevo y autocontenido: NO toca al gateway ni a los demas servicios.
+  frontend:
+    build: ./services/frontend
+    container_name: croak-frontend
+    depends_on:
+      - gateway
+    environment:
+      GATEWAY_URL: http://gateway:8000
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@croak.edu}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+    ports:
+      - "5173:5173"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5173/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
 volumes:
   pgdata:
