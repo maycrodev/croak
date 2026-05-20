@@ -301,15 +301,44 @@ GET {{gateway}}/grades/{{dSubmissionId}}
 Authorization: Bearer {{studentToken}}
 
 ###############################################################################
-# E. Bitacora de auditoria (incisos II, IV, VI)
+# ESCENARIO E - Auditoria estatal: verificacion + export anual (contexto b)
 ###############################################################################
 
-### Eventos LMS (incluye effective_score y unchanged)
-GET {{gateway}}/audit/events?service=grading-service
-Authorization: Bearer {{profToken}}
+### E.1 Login como administrador (la entidad estatal opera con rol admin)
+# @name loginAdmin
+POST {{gateway}}/auth/login
+Content-Type: application/json
 
-### Bitacora completa (cadena de hashes)
+{ "email": "admin@croak.edu", "password": "admin123" }
+
+###
+@adminToken = {{loginAdmin.response.body.access_token}}
+
+### E.2 Bitacora completa: cada evento encadena su hash con el anterior
 GET {{gateway}}/audit/events
+Authorization: Bearer {{adminToken}}
+
+### E.3 Verificar la integridad de TODA la cadena -> intact: true
+GET {{gateway}}/audit/events/verify
+Authorization: Bearer {{adminToken}}
+
+### E.4 Export anual inmutable del anio 2026 (documento para la entidad estatal).
+### export_seal = sha256( JSON canonico del documento SIN el campo export_seal ).
+### JSON canonico = json.dumps(doc, sort_keys=True, separators=(",",":"), ensure_ascii=False).
+### La entidad estatal recalcula ese sello para verificar que el archivo no fue alterado.
+GET {{gateway}}/audit/export/annual?year=2026
+Authorization: Bearer {{adminToken}}
+
+### E.5 Export de un anio SIN eventos -> documento vacio valido (no error)
+GET {{gateway}}/audit/export/annual?year=1999
+Authorization: Bearer {{adminToken}}
+
+### E.6 (negativo) un estudiante NO puede verificar la cadena -> HTTP 403
+GET {{gateway}}/audit/events/verify
+Authorization: Bearer {{studentToken}}
+
+### E.7 (negativo) un profesor NO puede disparar el export estatal -> HTTP 403
+GET {{gateway}}/audit/export/annual?year=2026
 Authorization: Bearer {{profToken}}
 
 ###############################################################################
