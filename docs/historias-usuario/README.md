@@ -9,6 +9,6 @@ Historias de Usuario (HU) trazables a los incisos del kata y al plan de MVPs
 | `mvp1-incisos-I-II-III.md` | MVP1 | I, II, III | Implementado |
 | `mvp2-incisos-IV-V.md` | MVP2 | IV, V | Implementado |
 | `mvp3-incisos-VI-VII.md` | MVP3 | VI, VII | Implementado |
-| `mvp4-*.md` | MVP4 | Contexto b) | Pendiente |
+| `mvp4-contexto-b.md` | MVP4 | Contexto b) | Implementado |
 
 Cada HU sigue el formato: **rol**, **necesidad**, **criterios de aceptación**.
